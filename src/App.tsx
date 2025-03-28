@@ -29,12 +29,14 @@ function App() {
   const frameRef = useRef<HTMLDivElement>(null);
   const contentFrameRef = useRef<HTMLDivElement>(null);
   const transitionOverlayRef = useRef<HTMLDivElement>(null);
+  const mainWrapperRef = useRef<HTMLDivElement>(null);
   const initialFadeRef = useRef(false);
+  const scrollProxy = useRef<HTMLDivElement>(null);
 
-  // Setup the expanding frame animation when content is ready
-  useEffect(() => {
-    if (contentReady && frameRef.current && contentFrameRef.current) {
-      // Set initial frame size - starts very small
+  // Set up initial state for the frame (small centered window)
+  const setupInitialFrameState = () => {
+    if (frameRef.current) {
+      // Ensure frame starts small before any animations
       gsap.set(frameRef.current, {
         width: '20vw',
         height: '20vh',
@@ -43,113 +45,201 @@ function App() {
         left: '50%',
         xPercent: -50,
         yPercent: -50,
-        boxShadow: '0 0 30px rgba(255,255,255,0.08)'
+        boxShadow: '0 0 30px rgba(255,255,255,0.08)',
+        opacity: 1
       });
-      
-      // Content should be already normal size but visible only through the small frame
+    }
+    
+    if (contentFrameRef.current) {
+      // Make content visible but prevent scrolling initially
       gsap.set(contentFrameRef.current, {
         scale: 1,
         opacity: 1,
+        overflow: 'hidden'
       });
-      
-      // Create animation timeline for expanding the frame
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: document.body,
-          start: "top top",
-          end: "25% top",
-          scrub: 1.2,
-          invalidateOnRefresh: true,
-        }
+    }
+    
+    if (mainWrapperRef.current) {
+      // Hide the main scroll container initially
+      gsap.set(mainWrapperRef.current, {
+        opacity: 0
       });
-      
-      // Animate the frame to expand to full screen with enhanced effects
-      tl.to(frameRef.current, {
+    }
+  };
+
+  // Setup the expanding frame animation
+  const setupFrameExpansion = () => {
+    if (!contentReady || !frameRef.current || !contentFrameRef.current || !scrollProxy.current) return;
+    
+    // Set up scroll proxy for controlling the animation
+    let scrollAmount = 0;
+    const maxScroll = window.innerHeight * 0.5; // Amount of scroll needed for full expansion
+    
+    // Create animation timeline for expanding the frame
+    const expandTimeline = gsap.timeline({ paused: true });
+    
+    // Add a subtle glow to the frame
+    const frameGlow = document.createElement('div');
+    frameGlow.className = 'absolute inset-0 pointer-events-none';
+    frameGlow.style.boxShadow = 'inset 0 0 30px rgba(255,255,255,0.1)';
+    frameGlow.style.borderRadius = '12px';
+    frameGlow.style.opacity = '0';
+    if (frameRef.current.firstChild) {
+      frameRef.current.insertBefore(frameGlow, frameRef.current.firstChild);
+    } else {
+      frameRef.current.appendChild(frameGlow);
+    }
+    
+    // Build the animation timeline
+    expandTimeline
+      // Stage 1: Initial glow effect
+      .to(frameGlow, {
+        opacity: 0.8,
+        duration: 0.3
+      })
+      // Stage 2: Start expanding and fading glow
+      .to(frameRef.current, {
+        width: '60vw',
+        height: '60vh',
+        duration: 0.5,
+        ease: "power2.out"
+      }, 0.2)
+      .to(frameGlow, {
+        opacity: 0.4,
+        duration: 0.5
+      }, 0.2)
+      // Stage 3: Continue expanding to full screen
+      .to(frameRef.current, {
         width: '100vw',
         height: '100vh',
         borderRadius: '0px',
         boxShadow: '0 0 0px rgba(255,255,255,0)',
-        ease: "power3.inOut",
-        duration: 2.5
-      });
-      
-      // Add a subtle glow to the frame as it expands
-      const frameGlow = document.createElement('div');
-      frameGlow.className = 'absolute inset-0 pointer-events-none';
-      frameGlow.style.boxShadow = 'inset 0 0 30px rgba(255,255,255,0.1)';
-      frameGlow.style.borderRadius = '12px';
-      frameGlow.style.opacity = '0';
-      frameRef.current.appendChild(frameGlow);
-      
-      // Animate the glow effect
-      tl.to(frameGlow, {
-        opacity: 0.8,
-        duration: 1
-      }, 0).to(frameGlow, {
+        duration: 0.5,
+        ease: "power3.inOut"
+      }, 0.7)
+      .to(frameGlow, {
         opacity: 0,
         borderRadius: '0px',
-        duration: 1.5
-      }, 1);
+        duration: 0.4
+      }, 0.7)
+      // Stage 4: Enable content scrolling when fully expanded
+      .to(contentFrameRef.current, {
+        overflow: 'auto',
+        duration: 0.1,
+        onComplete: () => {
+          // Enable normal scrolling when frame is fully expanded
+          if (contentFrameRef.current && mainWrapperRef.current) {
+            mainWrapperRef.current.style.opacity = '1';
+            document.body.style.overflow = '';
+          }
+        }
+      }, 1.2);
+    
+    // Function to update animation progress based on scroll
+    const updateFrameExpansion = () => {
+      // Calculate progress (0-1) based on scroll amount
+      const progress = Math.min(1, scrollAmount / maxScroll);
+      expandTimeline.progress(progress);
       
-      // Add scroll indicator that fades out as user scrolls
-      const scrollIndicator = document.querySelector('.scroll-indicator');
-      if (scrollIndicator) {
-        gsap.to(scrollIndicator, {
-          scrollTrigger: {
-            trigger: document.body,
-            start: "top top",
-            end: "10% top",
-            scrub: true,
-          },
-          opacity: 0,
-          y: 20,
-          duration: 1
-        });
+      // When fully expanded, remove the scroll listener
+      if (progress >= 1) {
+        window.removeEventListener('scroll', handleScroll);
       }
+    };
+    
+    // Scroll handler to track scroll position and update animation
+    const handleScroll = () => {
+      if (scrollAmount < maxScroll) {
+        scrollAmount = Math.min(maxScroll, window.scrollY);
+        updateFrameExpansion();
+        
+        // Prevent normal scrolling until frame is fully expanded
+        if (scrollAmount < maxScroll) {
+          window.scrollTo(0, scrollAmount);
+        }
+      }
+    };
+    
+    // Add scroll listener
+    window.addEventListener('scroll', handleScroll);
+    
+    // Add scroll indicator that fades out as user scrolls
+    const scrollIndicator = document.querySelector('.scroll-indicator');
+    if (scrollIndicator) {
+      gsap.to(scrollIndicator, {
+        scrollTrigger: {
+          trigger: document.body,
+          start: "top top",
+          end: `${maxScroll * 0.7}px top`,
+          scrub: true,
+        },
+        opacity: 0,
+        y: 20,
+        duration: 1
+      });
     }
-  }, [contentReady]);
+    
+    // Cleanup function
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  };
 
-  // Effect to disable scroll during loading and refresh ScrollTrigger
+  // Effect to handle transition from loading screen to content
   useEffect(() => {
     if (isLoading) {
-      // Disable scrolling when loading
+      // When loading, ensure scroll is disabled and position is reset
       document.body.style.overflow = 'hidden';
-      // Reset scroll position to top
       window.scrollTo(0, 0);
     } else {
-      // Create a smooth transition effect
+      // Set up initial small frame before showing content
+      setupInitialFrameState();
+      
+      // Create a smooth transition from loading screen
       if (transitionOverlayRef.current) {
-        // Fade out the overlay
         gsap.to(transitionOverlayRef.current, { 
           opacity: 0, 
           duration: 1, 
           ease: "power2.inOut",
           onComplete: () => {
-            // Enable scrolling when transition completes
-            document.body.style.overflow = '';
+            // Don't enable scrolling yet - we want to control it
+            // based on frame expansion
+            document.body.style.overflow = 'hidden';
             setContentReady(true);
             
-            // Add smooth scroll behavior
             if (isFirstLoad) {
               document.documentElement.style.scrollBehavior = 'smooth';
               setIsFirstLoad(false);
-              
-              // Refresh ScrollTrigger to ensure animations work
-              setTimeout(() => {
-                ScrollTrigger.refresh();
-              }, 200);
             }
+            
+            // Small delay before allowing expansion to start
+            setTimeout(() => {
+              // Ensure scrollProxy is visible to capture scroll events
+              if (scrollProxy.current) {
+                scrollProxy.current.style.display = 'block';
+              }
+              
+              // Now set up frame expansion
+              setupFrameExpansion();
+              
+              // Allow minimal scrolling to trigger expansion
+              document.body.style.overflow = '';
+              
+              // Refresh ScrollTrigger
+              ScrollTrigger.refresh();
+            }, 300);
           }
         });
       } else {
-        // Fallback if overlay ref is not available
-        document.body.style.overflow = '';
+        // Fallback
+        document.body.style.overflow = 'hidden';
         setContentReady(true);
+        setupInitialFrameState();
+        setupFrameExpansion();
       }
     }
     
     return () => {
-      // Cleanup
       document.body.style.overflow = '';
     };
   }, [isLoading, isFirstLoad]);
@@ -164,15 +254,12 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Force ScrollTrigger update when main content becomes visible
+  // Update ScrollTrigger when content is ready
   useEffect(() => {
     if (contentReady && appRef.current) {
-      // Clear any existing ScrollTrigger instances
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
       
-      // Wait for DOM to update
       setTimeout(() => {
-        // Refresh ScrollTrigger
         ScrollTrigger.refresh();
       }, 500);
     }
@@ -182,11 +269,8 @@ function App() {
     console.log("Loading complete, transitioning to main content");
     setIsLoading(false);
     
-    // Force refresh ScrollTrigger after a short delay
     setTimeout(() => {
-      // Refresh ScrollTrigger
       ScrollTrigger.refresh();
-      
       console.log("ScrollTrigger refreshed");
     }, 300);
   };
@@ -203,6 +287,13 @@ function App() {
             className="fixed inset-0 bg-black z-50 pointer-events-none"
           ></div>
           
+          {/* Scroll proxy - invisible element to capture scroll */}
+          <div 
+            ref={scrollProxy}
+            className="fixed inset-0 z-30 pointer-events-none"
+            style={{ display: 'none', height: '200vh' }}
+          ></div>
+          
           {/* Expanding frame */}
           <div 
             ref={frameRef}
@@ -215,34 +306,37 @@ function App() {
             {/* Content inside the frame */}
             <div 
               ref={contentFrameRef}
-              className="w-screen h-screen overflow-auto"
+              className="w-screen h-screen overflow-hidden" // Start without scrolling
             >
-              <Router>
-                <div ref={appRef} className="min-h-screen">
-                  <Navbar />
-                  <Routes>
-                    <Route path="/" element={
-                      <>
-                        <Hero />
-                        <div id="services">
-                          <Services />
-                        </div>
-                        <Projects />
-                        <Concert />
-                        <Partners />
-                        <Impact />
-                      </>
-                    } />
-                    <Route path="/about" element={<About />} />
-                    <Route path="/contact" element={<Contact />} />
-                    <Route path="/services/corporate-events" element={<CorporateEvents />} />
-                    <Route path="/services/wedding-planning" element={<WeddingPlanning />} />
-                    <Route path="/services/social-gatherings" element={<SocialGatherings />} />
-                    <Route path="/services/event-production" element={<EventProduction />} />
-                  </Routes>
-                  <Footer />
-                </div>
-              </Router>
+              {/* Actual scrollable content */}
+              <div ref={mainWrapperRef} className="w-full h-full">
+                <Router>
+                  <div ref={appRef} className="min-h-screen">
+                    <Navbar />
+                    <Routes>
+                      <Route path="/" element={
+                        <>
+                          <Hero />
+                          <div id="services">
+                            <Services />
+                          </div>
+                          <Projects />
+                          <Concert />
+                          <Partners />
+                          <Impact />
+                        </>
+                      } />
+                      <Route path="/about" element={<About />} />
+                      <Route path="/contact" element={<Contact />} />
+                      <Route path="/services/corporate-events" element={<CorporateEvents />} />
+                      <Route path="/services/wedding-planning" element={<WeddingPlanning />} />
+                      <Route path="/services/social-gatherings" element={<SocialGatherings />} />
+                      <Route path="/services/event-production" element={<EventProduction />} />
+                    </Routes>
+                    <Footer />
+                  </div>
+                </Router>
+              </div>
             </div>
           </div>
           
