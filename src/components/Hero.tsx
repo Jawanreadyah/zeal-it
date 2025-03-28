@@ -50,7 +50,11 @@ const Hero = () => {
   const contentRef = useRef<HTMLDivElement>(null);
   const backgroundRef = useRef<HTMLDivElement>(null);
   const statsBarRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const animationSetupRef = useRef(false);
+  const cleanupFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -64,25 +68,42 @@ const Hero = () => {
   useEffect(() => {
     // Setup the immersive scroll animation, but only once
     if (!animationSetupRef.current) {
-      setupScrollAnimation({
+      const cleanup = setupScrollAnimation({
         sectionRef,
         contentRef,
         backgroundRef,
         statsItemsSelector: '.stats-item'
       });
+      
+      // Store the cleanup function
+      if (cleanup && typeof cleanup === 'function') {
+        cleanupFnRef.current = cleanup;
+      }
+      
       animationSetupRef.current = true;
     }
 
     // Make sure animations can be triggered by scrolling
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Clean up any existing animations first
+        if (cleanupFnRef.current) {
+          cleanupFnRef.current();
+          cleanupFnRef.current = null;
+        }
+        
         // Re-run animation setup when tab becomes visible again
-        setupScrollAnimation({
+        const cleanup = setupScrollAnimation({
           sectionRef,
           contentRef,
           backgroundRef,
           statsItemsSelector: '.stats-item'
         });
+        
+        // Store new cleanup function
+        if (cleanup && typeof cleanup === 'function') {
+          cleanupFnRef.current = cleanup;
+        }
       }
     };
 
@@ -90,63 +111,112 @@ const Hero = () => {
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Clean up animations when component unmounts
+      if (cleanupFnRef.current) {
+        cleanupFnRef.current();
+      }
     };
+  }, []);
+
+  // Add enhanced 3D effect to heading and content elements
+  useEffect(() => {
+    if (headingRef.current && gridRef.current) {
+      // Apply a 3D perspective to the main content elements
+      gsap.set([headingRef.current, gridRef.current], {
+        transformPerspective: 1000,
+        force3D: true
+      });
+      
+      // Create subtle hover-like effect that follows mouse/scroll
+      const handleMouseMove = (e: MouseEvent) => {
+        const { clientX, clientY } = e;
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        
+        // Calculate offset from center (normalized -1 to 1)
+        const offsetX = (clientX - centerX) / centerX;
+        const offsetY = (clientY - centerY) / centerY;
+        
+        // Apply subtle rotation based on mouse position
+        if (headingRef.current) {
+          gsap.to(headingRef.current, {
+            rotationY: 5 * offsetX,
+            rotationX: -3 * offsetY,
+            duration: 0.5,
+            ease: "power1.out"
+          });
+        }
+        
+        // Apply opposite rotation to grid for dynamic effect
+        if (gridRef.current) {
+          gsap.to(gridRef.current, {
+            rotationY: -3 * offsetX,
+            rotationX: 2 * offsetY,
+            duration: 0.5,
+            ease: "power1.out"
+          });
+        }
+      };
+      
+      window.addEventListener('mousemove', handleMouseMove);
+      
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
   }, []);
 
   // When entering the component for the first time, ensure it's visible
   useEffect(() => {
-    // Apply immediate styles to make sure content is visible even without scrolling
+    // Apply initial extremely small state
     if (contentRef.current) {
       gsap.set(contentRef.current, {
-        opacity: 0.8,
-        filter: 'blur(2px)',
-        scale: 0.92,
-        y: 20,
-        transformOrigin: "center top"
-      });
-      
-      // Fade in effect when the component loads
-      gsap.to(contentRef.current, {
-        opacity: 1,
-        filter: 'blur(0px)',
-        scale: 1,
-        y: 0,
-        duration: 1.5,
-        ease: 'power2.out',
-        delay: 0.5
+        opacity: 0.4,
+        filter: 'blur(8px)',
+        scale: 0.3,
+        y: 300,
+        z: -800,
+        transformOrigin: "center center",
+        transformPerspective: 1200,
+        force3D: true
       });
     }
 
-    // Ensure stats section is visible - override any scale/opacity reduction
+    // Set main grid initially small
+    if (gridRef.current) {
+      gsap.set(gridRef.current, {
+        scale: 0.6,
+        opacity: 0.3,
+        y: 100,
+        transformOrigin: "center center"
+      });
+    }
+
+    // Set stats section to start far away
     if (statsBarRef.current) {
       gsap.set(statsBarRef.current, {
-        opacity: 1,
-        scale: 1,
-        filter: "blur(0px)",
-        clearProps: "all",
-        overwrite: true
+        opacity: 0.5,
+        y: 50,
+        z: -100
       });
-
-      // Animate stats items in
-      const statsItems = document.querySelectorAll('.stats-item');
-      if (statsItems.length > 0) {
-        gsap.fromTo(statsItems, 
-          { y: 15, opacity: 0 },
-          { 
-            y: 0, 
-            opacity: 1, 
-            stagger: 0.1, 
-            duration: 0.6, 
-            ease: "power2.out",
-            delay: 0.8
-          }
-        );
-      }
     }
+
+    // Set heading for 3D effect
+    if (headingRef.current) {
+      gsap.set(headingRef.current, {
+        transformPerspective: 1000,
+        force3D: true,
+        rotationX: -15, // Slight initial angle
+        y: 30
+      });
+    }
+
+    // Note: We don't animate these in automatically anymore
+    // Instead, we'll let the scroll-triggered animations handle everything
   }, []);
 
   return (
-    <section ref={sectionRef} className="relative min-h-screen overflow-hidden">
+    <section ref={sectionRef} className="relative min-h-screen overflow-hidden perspective-1000">
       <div 
         ref={backgroundRef}
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -184,10 +254,10 @@ const Hero = () => {
         </div>
 
         {/* Main Content */}
-        <div className="mt-32 grid grid-cols-1 md:grid-cols-2 gap-16">
+        <div ref={gridRef} className="mt-32 grid grid-cols-1 md:grid-cols-2 gap-16">
           {/* Left Side - Text */}
           <div className="flex flex-col justify-center">
-            <h1 className="text-4xl md:text-6xl font-light leading-tight mb-6">
+            <h1 ref={headingRef} className="text-4xl md:text-6xl font-light leading-tight mb-6">
               Crafting
               <span className="text-hurricane-red block mt-2">Experiences</span>
             </h1>
@@ -195,6 +265,7 @@ const Hero = () => {
               From corporate gatherings to dream concerts, we transform visions into extraordinary moments.
             </p>
             <button 
+              ref={buttonRef}
               onClick={() => navigate('/contact')}
               className="w-fit px-8 py-4 bg-white/5 rounded-full border border-white/10 
                 hover:bg-white/10 transition-all flex items-center gap-2"

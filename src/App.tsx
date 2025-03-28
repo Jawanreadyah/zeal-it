@@ -24,7 +24,10 @@ gsap.registerPlugin(ScrollTrigger);
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [contentReady, setContentReady] = useState(false);
   const appRef = useRef<HTMLDivElement>(null);
+  const transitionOverlayRef = useRef<HTMLDivElement>(null);
+  const initialFadeRef = useRef(false);
 
   // Effect to disable scroll during loading and refresh ScrollTrigger
   useEffect(() => {
@@ -34,26 +37,61 @@ function App() {
       // Reset scroll position to top
       window.scrollTo(0, 0);
     } else {
-      // Enable scrolling when loading is complete
-      document.body.style.overflow = '';
-      
-      // If this is the first time loading, add smooth scrolling
-      if (isFirstLoad) {
-        // Add smooth scroll behavior to body
-        document.documentElement.style.scrollBehavior = 'smooth';
-        setIsFirstLoad(false);
+      // Create a smooth transition effect
+      if (transitionOverlayRef.current) {
+        // Only fade the overlay partially - we want to see content emerge as we scroll
+        gsap.fromTo(transitionOverlayRef.current,
+          { opacity: 1 },
+          { 
+            opacity: 0.7, // Keep a slight overlay to make content look distant 
+            duration: 1, 
+            ease: "power2.inOut",
+            onComplete: () => {
+              // Enable scrolling when transition completes
+              document.body.style.overflow = '';
+              setContentReady(true);
+              
+              // If this is the first time loading, add smooth scrolling
+              if (isFirstLoad) {
+                // Add smooth scroll behavior to body
+                document.documentElement.style.scrollBehavior = 'smooth';
+                setIsFirstLoad(false);
+                
+                // Don't auto-scroll - we want the user to control the animation
+                setTimeout(() => {
+                  // Refresh ScrollTrigger to make sure it picks up elements
+                  ScrollTrigger.refresh();
+                }, 200);
+              }
+            }
+          }
+        );
         
-        // Small delay to ensure animations are ready
-        setTimeout(() => {
-          // Refresh ScrollTrigger to make sure it picks up elements
-          ScrollTrigger.refresh();
-          
-          // Scroll 1px to trigger scroll animations
-          window.scrollTo({
-            top: 1,
-            behavior: 'smooth'
-          });
-        }, 200);
+        // Add a scroll listener to fade out the overlay completely as user scrolls
+        const handleInitialScroll = () => {
+          if (!initialFadeRef.current && transitionOverlayRef.current) {
+            // Further fade out the overlay based on scroll position
+            const scrollProgress = Math.min(1, window.scrollY / (window.innerHeight * 0.3));
+            const newOpacity = Math.max(0, 0.7 - (scrollProgress * 0.7));
+            
+            gsap.to(transitionOverlayRef.current, {
+              opacity: newOpacity,
+              duration: 0.3
+            });
+            
+            // When completely scrolled, remove the listener
+            if (scrollProgress >= 1) {
+              initialFadeRef.current = true;
+              window.removeEventListener('scroll', handleInitialScroll);
+            }
+          }
+        };
+        
+        window.addEventListener('scroll', handleInitialScroll);
+      } else {
+        // Fallback if overlay ref is not available
+        document.body.style.overflow = '';
+        setContentReady(true);
       }
     }
     
@@ -75,28 +113,17 @@ function App() {
 
   // Force ScrollTrigger update when main content becomes visible
   useEffect(() => {
-    if (!isLoading && appRef.current) {
+    if (contentReady && appRef.current) {
       // Clear any existing ScrollTrigger instances
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
       
       // Wait for DOM to update
       setTimeout(() => {
-        // Make sure scroll is enabled
-        document.body.style.overflow = '';
-        
         // Refresh ScrollTrigger
         ScrollTrigger.refresh();
-        
-        // Trigger a small scroll to activate animations
-        if (window.scrollY < 2) {
-          window.scrollTo({
-            top: 2,
-            behavior: 'smooth'
-          });
-        }
       }, 500);
     }
-  }, [isLoading]);
+  }, [contentReady]);
 
   const handleLoadingComplete = () => {
     console.log("Loading complete, transitioning to main content");
@@ -104,13 +131,11 @@ function App() {
     
     // Force refresh ScrollTrigger after a short delay
     setTimeout(() => {
-      // Make sure scroll is enabled
-      document.body.style.overflow = '';
-      
+      // Refresh ScrollTrigger
       ScrollTrigger.refresh();
       
       console.log("ScrollTrigger refreshed");
-    }, 100);
+    }, 300);
   };
 
   return (
@@ -118,32 +143,52 @@ function App() {
       {isLoading ? (
         <LoadingScreen onLoadingComplete={handleLoadingComplete} />
       ) : (
-        <Router>
-          <div ref={appRef} className="min-h-screen">
-            <Navbar />
-            <Routes>
-              <Route path="/" element={
-                <>
-                  <Hero />
-                  <div id="services">
-                    <Services />
-                  </div>
-                  <Projects />
-                  <Concert />
-                  <Partners />
-                  <Impact />
-                </>
-              } />
-              <Route path="/about" element={<About />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/services/corporate-events" element={<CorporateEvents />} />
-              <Route path="/services/wedding-planning" element={<WeddingPlanning />} />
-              <Route path="/services/social-gatherings" element={<SocialGatherings />} />
-              <Route path="/services/event-production" element={<EventProduction />} />
-            </Routes>
-            <Footer />
+        <>
+          {/* Transition overlay - initially quite dark */}
+          <div 
+            ref={transitionOverlayRef} 
+            className="fixed inset-0 bg-black z-40 pointer-events-none"
+          ></div>
+          
+          {/* Scroll indicator */}
+          <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 opacity-80 animate-bounce pointer-events-none">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-5 h-9 border-2 border-white/80 rounded-full flex justify-center p-1">
+                <div className="w-1 h-1 bg-white/80 rounded-full animate-pulse"></div>
+              </div>
+              <span className="text-white text-sm font-light tracking-wider uppercase">
+                Scroll to Discover
+              </span>
+            </div>
           </div>
-        </Router>
+          
+          <Router>
+            <div ref={appRef} className="min-h-screen">
+              <Navbar />
+              <Routes>
+                <Route path="/" element={
+                  <>
+                    <Hero />
+                    <div id="services">
+                      <Services />
+                    </div>
+                    <Projects />
+                    <Concert />
+                    <Partners />
+                    <Impact />
+                  </>
+                } />
+                <Route path="/about" element={<About />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/services/corporate-events" element={<CorporateEvents />} />
+                <Route path="/services/wedding-planning" element={<WeddingPlanning />} />
+                <Route path="/services/social-gatherings" element={<SocialGatherings />} />
+                <Route path="/services/event-production" element={<EventProduction />} />
+              </Routes>
+              <Footer />
+            </div>
+          </Router>
+        </>
       )}
     </>
   );

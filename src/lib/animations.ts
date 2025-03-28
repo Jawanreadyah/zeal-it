@@ -40,71 +40,88 @@ export const setupScrollAnimation = ({
   // Find the stats bar element (direct child of contentRef)
   const statsBar = contentRef.current.querySelector('.flex.flex-col.md\\:flex-row');
   
-  // Exclude stats bar from the blur/scale effects by ensuring it's at full opacity/scale
-  if (statsBar) {
-    gsap.set(statsBar, {
-      opacity: 1,
-      scale: 1,
-      filter: "none",
-      clearProps: "all"
-    });
-  }
+  // Find the main content grid for separate animations
+  const mainContentGrid = contentRef.current.querySelector('.mt-32.grid');
   
-  // Set initial scale for the perspective effect - make sure it's visible on mobile
-  // but exclude the stats bar from these effects
+  // Set extremely small initial size - this creates a more dramatic scaling effect
   gsap.set(contentRef.current, {
-    scale: 0.9,
-    opacity: 0.7,
-    filter: "blur(3px)",
-    y: 30,
-    transformOrigin: "center top"
+    scale: 0.3, // Start extremely small
+    opacity: 0.4,
+    filter: "blur(8px)",
+    y: 300, // Start far below
+    z: -800, // Start very far back in 3D space
+    transformOrigin: "center center", // Scale from center
+    transformPerspective: 1200, // Enhanced perspective for 3D effect
+    force3D: true
   });
   
-  // Make sure the stats bar stays visible
-  if (statsBar) {
-    gsap.set(statsBar, {
-      opacity: 1,
-      scale: 1, 
-      filter: "none",
-      overwrite: "auto"
+  // If we have main content, set it to be initially farther away
+  if (mainContentGrid) {
+    gsap.set(mainContentGrid, {
+      scale: 0.6,
+      opacity: 0.3,
+      y: 100,
+      transformOrigin: "center center"
     });
   }
-
-  // Create the animation timeline for the content
+  
+  // Ensure stats bar stays fully visible but starts further away
+  if (statsBar) {
+    gsap.set(statsBar, {
+      opacity: 0.5,
+      y: 50,
+      z: -100
+    });
+  }
+  
+  // Create the main timeline for the dramatic scaling effect
+  // The key here is to make the animation end point much further down the page
+  // to extend the scaling effect throughout more scrolling
   const tl = gsap.timeline({
     scrollTrigger: {
       trigger: sectionRef.current,
-      start: "top bottom", // Start as soon as the section enters viewport from bottom
-      end: "20% top",
-      scrub: 0.5,
+      start: "top bottom", // Start when section enters viewport
+      end: "100% top", // End animation at the very bottom of the section
+      scrub: 1, // Smoother scrubbing for more cinematic feel
       invalidateOnRefresh: true,
-      fastScrollEnd: true,
-      preventOverlaps: true
+      preventOverlaps: true,
+      markers: false // Set to true for debugging
     }
   });
 
-  // Animate content from small/far away to full size
+  // Animate content from tiny to full size with a dramatic scaling effect
   tl.to(contentRef.current, {
     scale: 1,
     opacity: 1,
     filter: "blur(0px)",
     y: 0,
-    ease: "power1.out",
-    duration: 1
+    z: 0,
+    ease: "power1.inOut",
+    duration: 3 // Much longer duration for more gradual scaling
   });
   
-  // Make sure stats section stays visible throughout animation
-  if (statsBar) {
-    gsap.to(statsBar, {
-      opacity: 1,
+  // If we have main content, animate it separately with slightly different timing
+  if (mainContentGrid) {
+    tl.to(mainContentGrid, {
       scale: 1,
-      filter: "none",
-      duration: 0.1,
-      overwrite: "auto"
-    });
+      opacity: 1,
+      y: 0,
+      ease: "power1.out",
+      duration: 2.5
+    }, "-=2.8"); // Start earlier in the main animation
   }
-
-  // Animate background parallax effect
+  
+  // Animate stats bar separately with its own timing
+  if (statsBar) {
+    tl.to(statsBar, {
+      opacity: 1,
+      y: 0,
+      z: 0,
+      duration: 1.5
+    }, "-=2.5");
+  }
+  
+  // Animate background with parallax effect
   gsap.to(backgroundRef.current, {
     scrollTrigger: {
       trigger: sectionRef.current,
@@ -113,60 +130,99 @@ export const setupScrollAnimation = ({
       scrub: true,
       invalidateOnRefresh: true
     },
-    backgroundPositionY: "50%",
+    backgroundPositionY: "60%", // More dramatic position shift
+    scale: 1.1, // Subtle scale effect on background
     ease: "none",
     duration: 1
   });
 
-  // Force initial rendering in case user doesn't scroll
-  setTimeout(() => {
-    // Make sure stats section is fully visible
-    if (statsBar) {
-      gsap.set(statsBar, {
-        opacity: 1,
-        scale: 1,
-        filter: "none",
+  // Enhanced scroll-responsive animation that's more dramatic
+  const scrollResponsiveAnimation = () => {
+    // Calculate scroll progress (0 to 1) more gradually
+    // Use a larger denominator to make the effect last longer as you scroll
+    const scrollProgress = Math.min(1, window.scrollY / (window.innerHeight * 1.2));
+    
+    if (contentRef.current) {
+      // Apply scaling directly based on scroll position for a more immediate feel
+      const currentScale = 0.3 + (scrollProgress * 0.7); // Scale from 0.3 to 1.0
+      const currentBlur = Math.max(0, 8 - (scrollProgress * 8)); // Blur from 8px to 0px
+      const currentY = Math.max(0, 300 - (scrollProgress * 300)); // Y from 300 to 0
+      const currentZ = Math.max(0, -800 + (scrollProgress * 800)); // Z from -800 to 0
+      
+      gsap.to(contentRef.current, {
+        scale: currentScale,
+        filter: `blur(${currentBlur}px)`,
+        y: currentY,
+        z: currentZ,
+        opacity: 0.4 + (scrollProgress * 0.6),
+        duration: 0.1, // Very quick updates for immediate response
+        ease: "none",
         overwrite: "auto"
       });
     }
     
-    ScrollTrigger.refresh();
-    
-    // Slight scroll to trigger animations if at the top of the page
-    if (window.scrollY < 5) {
-      window.scrollTo({
-        top: 5,
-        behavior: 'smooth'
+    // Apply subtle movements to cards for layered effect
+    const cards = document.querySelectorAll('.min-h-\\[14rem\\]');
+    if (cards.length > 0) {
+      gsap.to(cards, {
+        y: 80 * (1 - scrollProgress), // More dramatic movement for cards
+        scale: 0.6 + (scrollProgress * 0.4),
+        stagger: 0.05,
+        duration: 0.2,
+        ease: "power1.out",
+        overwrite: "auto"
       });
     }
+  };
+  
+  // Create scroll listener for responsive animation
+  window.addEventListener('scroll', scrollResponsiveAnimation);
+  
+  // Trigger initial animation state but don't auto-scroll
+  // We want the user's scrolling to control everything
+  setTimeout(() => {
+    // Initial state for stats items
+    const statsItems = document.querySelectorAll(statsItemsSelector);
+    if (statsItems.length > 0) {
+      gsap.set(statsItems, {
+        opacity: 0,
+        y: 30
+      });
+    }
+    
+    // Refresh ScrollTrigger
+    ScrollTrigger.refresh();
+    
+    // Call scroll animation once to set initial state
+    scrollResponsiveAnimation();
   }, 500);
 
-  // Animate stats bar elements to stagger in
+  // Update stats items based on scroll
   const statsItems = document.querySelectorAll(statsItemsSelector);
   if (statsItems.length > 0) {
-    // Make sure each stats item is visible immediately
-    gsap.set(statsItems, {
-      opacity: 1,
-      y: 0
-    });
-    
-    // Then apply a subtle animation when scrolling into view
     gsap.fromTo(statsItems, 
-      { opacity: 0.8, y: 5 },
+      { opacity: 0, y: 30 },
       {
         scrollTrigger: {
           trigger: sectionRef.current,
-          start: "top center",
+          start: "5% bottom", // Trigger a bit later
+          end: "15% center",
+          scrub: 0.5,
           toggleActions: "play none none reverse"
         },
         y: 0,
         opacity: 1,
         stagger: 0.1,
-        duration: 0.4,
-        ease: "power1.out"
+        duration: 0.6,
+        ease: "back.out(1.2)" // More dynamic easing
       }
     );
   }
+  
+  // Return a cleanup function to remove event listeners
+  return () => {
+    window.removeEventListener('scroll', scrollResponsiveAnimation);
+  };
 };
 
 /**
