@@ -2,8 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { ArrowUpRight, Box, Settings, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GlowingEffect } from './ui/glowing-effect';
-import { setupScrollAnimation } from '../lib/animations';
 import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+// Register ScrollTrigger
+gsap.registerPlugin(ScrollTrigger);
 
 interface GridItemProps {
   icon: React.ReactNode;
@@ -53,8 +56,6 @@ const Hero = () => {
   const gridRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const animationSetupRef = useRef(false);
-  const cleanupFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -65,158 +66,89 @@ const Hero = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Setup subtle parallax effect for background
   useEffect(() => {
-    // Setup the immersive scroll animation, but only once
-    if (!animationSetupRef.current) {
-      const cleanup = setupScrollAnimation({
-        sectionRef,
-        contentRef,
-        backgroundRef,
-        statsItemsSelector: '.stats-item'
+    if (backgroundRef.current) {
+      gsap.to(backgroundRef.current, {
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: "top bottom",
+          end: "bottom top",
+          scrub: true,
+          invalidateOnRefresh: true
+        },
+        backgroundPositionY: "30%",
+        ease: "none",
+        duration: 1
       });
-      
-      // Store the cleanup function
-      if (cleanup && typeof cleanup === 'function') {
-        cleanupFnRef.current = cleanup;
-      }
-      
-      animationSetupRef.current = true;
     }
+  }, []);
 
-    // Make sure animations can be triggered by scrolling
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Clean up any existing animations first
-        if (cleanupFnRef.current) {
-          cleanupFnRef.current();
-          cleanupFnRef.current = null;
+  // Add subtle animations to various elements as we scroll further
+  useEffect(() => {
+    // Animate stats items as they come into view
+    const statsItems = document.querySelectorAll('.stats-item');
+    if (statsItems.length > 0) {
+      gsap.fromTo(statsItems, 
+        { opacity: 0, y: 15 },
+        {
+          scrollTrigger: {
+            trigger: statsBarRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none"
+          },
+          y: 0,
+          opacity: 1,
+          stagger: 0.1,
+          duration: 0.6,
+          ease: "power2.out",
         }
-        
-        // Re-run animation setup when tab becomes visible again
-        const cleanup = setupScrollAnimation({
-          sectionRef,
-          contentRef,
-          backgroundRef,
-          statsItemsSelector: '.stats-item'
-        });
-        
-        // Store new cleanup function
-        if (cleanup && typeof cleanup === 'function') {
-          cleanupFnRef.current = cleanup;
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+      );
+    }
     
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      // Clean up animations when component unmounts
-      if (cleanupFnRef.current) {
-        cleanupFnRef.current();
-      }
-    };
-  }, []);
-
-  // Add enhanced 3D effect to heading and content elements
-  useEffect(() => {
-    if (headingRef.current && gridRef.current) {
-      // Apply a 3D perspective to the main content elements
-      gsap.set([headingRef.current, gridRef.current], {
-        transformPerspective: 1000,
-        force3D: true
-      });
-      
-      // Create subtle hover-like effect that follows mouse/scroll
-      const handleMouseMove = (e: MouseEvent) => {
-        const { clientX, clientY } = e;
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        
-        // Calculate offset from center (normalized -1 to 1)
-        const offsetX = (clientX - centerX) / centerX;
-        const offsetY = (clientY - centerY) / centerY;
-        
-        // Apply subtle rotation based on mouse position
-        if (headingRef.current) {
-          gsap.to(headingRef.current, {
-            rotationY: 5 * offsetX,
-            rotationX: -3 * offsetY,
-            duration: 0.5,
-            ease: "power1.out"
-          });
-        }
-        
-        // Apply opposite rotation to grid for dynamic effect
-        if (gridRef.current) {
-          gsap.to(gridRef.current, {
-            rotationY: -3 * offsetX,
-            rotationX: 2 * offsetY,
-            duration: 0.5,
-            ease: "power1.out"
-          });
-        }
-      };
-      
-      window.addEventListener('mousemove', handleMouseMove);
-      
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-      };
-    }
-  }, []);
-
-  // When entering the component for the first time, ensure it's visible
-  useEffect(() => {
-    // Apply initial extremely small state
-    if (contentRef.current) {
-      gsap.set(contentRef.current, {
-        opacity: 0.4,
-        filter: 'blur(8px)',
-        scale: 0.3,
-        y: 300,
-        z: -800,
-        transformOrigin: "center center",
-        transformPerspective: 1200,
-        force3D: true
-      });
-    }
-
-    // Set main grid initially small
-    if (gridRef.current) {
-      gsap.set(gridRef.current, {
-        scale: 0.6,
-        opacity: 0.3,
-        y: 100,
-        transformOrigin: "center center"
-      });
-    }
-
-    // Set stats section to start far away
-    if (statsBarRef.current) {
-      gsap.set(statsBarRef.current, {
-        opacity: 0.5,
-        y: 50,
-        z: -100
-      });
-    }
-
-    // Set heading for 3D effect
+    // Add subtle animation to the main heading
     if (headingRef.current) {
-      gsap.set(headingRef.current, {
-        transformPerspective: 1000,
-        force3D: true,
-        rotationX: -15, // Slight initial angle
-        y: 30
-      });
+      gsap.fromTo(headingRef.current,
+        { opacity: 0, y: 20 },
+        {
+          scrollTrigger: {
+            trigger: headingRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none"
+          },
+          opacity: 1,
+          y: 0,
+          duration: 0.8,
+          ease: "power2.out",
+          delay: 0.2
+        }
+      );
     }
-
-    // Note: We don't animate these in automatically anymore
-    // Instead, we'll let the scroll-triggered animations handle everything
+    
+    // Add subtle animation to the grid items
+    const gridItems = document.querySelectorAll('.min-h-\\[14rem\\]');
+    if (gridItems.length > 0) {
+      gsap.fromTo(gridItems,
+        { opacity: 0, y: 25 },
+        {
+          scrollTrigger: {
+            trigger: gridRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none"
+          },
+          opacity: 1,
+          y: 0,
+          stagger: 0.15,
+          duration: 0.7,
+          ease: "back.out(1.2)",
+          delay: 0.3
+        }
+      );
+    }
   }, []);
 
   return (
-    <section ref={sectionRef} className="relative min-h-screen overflow-hidden perspective-1000">
+    <section ref={sectionRef} className="relative min-h-screen overflow-hidden">
       <div 
         ref={backgroundRef}
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -233,7 +165,7 @@ const Hero = () => {
 
       <div ref={contentRef} className="max-w-7xl mx-auto px-6 relative">
         {/* Stats Bar */}
-        <div ref={statsBarRef} className="flex flex-col md:flex-row justify-between items-center py-8 border-b border-white/10 mt-20 gap-4">
+        <div ref={statsBarRef} className="flex flex-col md:flex-row justify-between items-center py-8 border-b border-white/10 mt-20 gap-4 opacity-0">
           <div className="flex flex-wrap justify-center md:justify-start divide-x divide-white/10">
             <div className="stats-item px-4 first:pl-0">
               <span className="block text-sm text-white/40 font-light">Years</span>
@@ -257,7 +189,7 @@ const Hero = () => {
         <div ref={gridRef} className="mt-32 grid grid-cols-1 md:grid-cols-2 gap-16">
           {/* Left Side - Text */}
           <div className="flex flex-col justify-center">
-            <h1 ref={headingRef} className="text-4xl md:text-6xl font-light leading-tight mb-6">
+            <h1 ref={headingRef} className="text-4xl md:text-6xl font-light leading-tight mb-6 opacity-0">
               Crafting
               <span className="text-hurricane-red block mt-2">Experiences</span>
             </h1>
