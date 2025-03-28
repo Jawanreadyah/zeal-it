@@ -32,6 +32,7 @@ function App() {
   const mainWrapperRef = useRef<HTMLDivElement>(null);
   const initialFadeRef = useRef(false);
   const scrollProxy = useRef<HTMLDivElement>(null);
+  const expandTimeline = useRef<gsap.core.Timeline | null>(null);
 
   // Set up initial state for the frame (small centered window)
   const setupInitialFrameState = () => {
@@ -62,21 +63,47 @@ function App() {
     if (mainWrapperRef.current) {
       // Hide the main scroll container initially
       gsap.set(mainWrapperRef.current, {
-        opacity: 0
+        opacity: 0.3 // Start partially visible
       });
     }
   };
 
+  // Trigger scrolling programmatically to start expanding the frame
+  const triggerInitialScroll = () => {
+    // Simulate a scroll to start frame expansion
+    window.scrollTo({
+      top: 1,
+      behavior: 'smooth'
+    });
+    
+    // Add a small delay then trigger more scrolling to ensure animation starts
+    setTimeout(() => {
+      window.scrollTo({
+        top: 20, 
+        behavior: 'smooth'
+      });
+    }, 200);
+  };
+
   // Setup the expanding frame animation
   const setupFrameExpansion = () => {
-    if (!contentReady || !frameRef.current || !contentFrameRef.current || !scrollProxy.current) return;
-    
-    // Set up scroll proxy for controlling the animation
-    let scrollAmount = 0;
-    const maxScroll = window.innerHeight * 0.5; // Amount of scroll needed for full expansion
+    if (!contentReady || !frameRef.current || !contentFrameRef.current) return;
     
     // Create animation timeline for expanding the frame
-    const expandTimeline = gsap.timeline({ paused: true });
+    expandTimeline.current = gsap.timeline({ 
+      paused: true,
+      onComplete: () => {
+        // Enable normal scrolling when complete
+        if (contentFrameRef.current && mainWrapperRef.current) {
+          contentFrameRef.current.style.overflow = 'auto';
+          gsap.to(mainWrapperRef.current, {
+            opacity: 1,
+            duration: 0.3
+          });
+          document.body.style.overflow = '';
+        }
+      }
+    });
     
     // Add a subtle glow to the frame
     const frameGlow = document.createElement('div');
@@ -84,14 +111,10 @@ function App() {
     frameGlow.style.boxShadow = 'inset 0 0 30px rgba(255,255,255,0.1)';
     frameGlow.style.borderRadius = '12px';
     frameGlow.style.opacity = '0';
-    if (frameRef.current.firstChild) {
-      frameRef.current.insertBefore(frameGlow, frameRef.current.firstChild);
-    } else {
-      frameRef.current.appendChild(frameGlow);
-    }
+    frameRef.current.appendChild(frameGlow);
     
     // Build the animation timeline
-    expandTimeline
+    expandTimeline.current
       // Stage 1: Initial glow effect
       .to(frameGlow, {
         opacity: 0.8,
@@ -121,65 +144,66 @@ function App() {
         opacity: 0,
         borderRadius: '0px',
         duration: 0.4
-      }, 0.7)
-      // Stage 4: Enable content scrolling when fully expanded
-      .to(contentFrameRef.current, {
-        overflow: 'auto',
-        duration: 0.1,
-        onComplete: () => {
-          // Enable normal scrolling when frame is fully expanded
-          if (contentFrameRef.current && mainWrapperRef.current) {
-            mainWrapperRef.current.style.opacity = '1';
-            document.body.style.overflow = '';
-          }
-        }
-      }, 1.2);
+      }, 0.7);
     
-    // Function to update animation progress based on scroll
-    const updateFrameExpansion = () => {
-      // Calculate progress (0-1) based on scroll amount
-      const progress = Math.min(1, scrollAmount / maxScroll);
-      expandTimeline.progress(progress);
-      
-      // When fully expanded, remove the scroll listener
-      if (progress >= 1) {
-        window.removeEventListener('scroll', handleScroll);
-      }
-    };
+    // Set up direct DOM-based scroll handler
+    let lastScrollY = 0;
+    const totalScrollNeeded = window.innerHeight * 0.5;
     
-    // Scroll handler to track scroll position and update animation
     const handleScroll = () => {
-      if (scrollAmount < maxScroll) {
-        scrollAmount = Math.min(maxScroll, window.scrollY);
-        updateFrameExpansion();
+      // Get current scroll position and calculate delta
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - lastScrollY;
+      
+      // Update progress of expansion timeline based on scroll
+      if (expandTimeline.current) {
+        // Calculate the incremental progress
+        const currentProgress = expandTimeline.current.progress();
+        const progressIncrement = (scrollDelta / totalScrollNeeded);
+        const newProgress = Math.min(1, Math.max(0, currentProgress + progressIncrement));
         
-        // Prevent normal scrolling until frame is fully expanded
-        if (scrollAmount < maxScroll) {
-          window.scrollTo(0, scrollAmount);
+        // Apply the new progress to the timeline
+        expandTimeline.current.progress(newProgress);
+        
+        // If we're fully expanded, remove the scroll handler
+        if (newProgress >= 1) {
+          window.removeEventListener('scroll', handleScroll);
+          
+          // Enable content scrolling
+          if (contentFrameRef.current) {
+            contentFrameRef.current.style.overflow = 'auto';
+          }
+          
+          // Fade in content
+          if (mainWrapperRef.current) {
+            gsap.to(mainWrapperRef.current, {
+              opacity: 1,
+              duration: 0.3
+            });
+          }
+        } else {
+          // While expanding, prevent content from scrolling
+          window.scrollTo(0, currentScrollY);
         }
       }
+      
+      // Update last scroll position
+      lastScrollY = currentScrollY;
     };
     
-    // Add scroll listener
+    // Add scroll event listener
     window.addEventListener('scroll', handleScroll);
     
-    // Add scroll indicator that fades out as user scrolls
+    // Add scroll indicator that fades out as frame expands
     const scrollIndicator = document.querySelector('.scroll-indicator');
     if (scrollIndicator) {
-      gsap.to(scrollIndicator, {
-        scrollTrigger: {
-          trigger: document.body,
-          start: "top top",
-          end: `${maxScroll * 0.7}px top`,
-          scrub: true,
-        },
+      expandTimeline.current.to(scrollIndicator, {
         opacity: 0,
         y: 20,
-        duration: 1
-      });
+        duration: 0.3
+      }, 0.5);
     }
     
-    // Cleanup function
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
@@ -192,6 +216,12 @@ function App() {
       document.body.style.overflow = 'hidden';
       window.scrollTo(0, 0);
     } else {
+      // Check if this was a direct transition from loading screen via click
+      const isDirectTransition = window.sessionStorage.getItem('directTransition') === 'true';
+      
+      // Remove the flag so it's not used again
+      window.sessionStorage.removeItem('directTransition');
+      
       // Set up initial small frame before showing content
       setupInitialFrameState();
       
@@ -199,11 +229,10 @@ function App() {
       if (transitionOverlayRef.current) {
         gsap.to(transitionOverlayRef.current, { 
           opacity: 0, 
-          duration: 1, 
+          duration: isDirectTransition ? 0.5 : 0.8, // Faster for direct transition
           ease: "power2.inOut",
           onComplete: () => {
             // Don't enable scrolling yet - we want to control it
-            // based on frame expansion
             document.body.style.overflow = 'hidden';
             setContentReady(true);
             
@@ -212,22 +241,40 @@ function App() {
               setIsFirstLoad(false);
             }
             
-            // Small delay before allowing expansion to start
+            // Smaller delay for direct transition
+            const setupDelay = isDirectTransition ? 50 : 100;
+            
+            // Small delay before setting up expansion
             setTimeout(() => {
-              // Ensure scrollProxy is visible to capture scroll events
-              if (scrollProxy.current) {
-                scrollProxy.current.style.display = 'block';
-              }
-              
               // Now set up frame expansion
               setupFrameExpansion();
               
-              // Allow minimal scrolling to trigger expansion
+              // Allow scrolling to trigger expansion
               document.body.style.overflow = '';
+              
+              // Trigger initial scroll to start expansion
+              // For direct transition, trigger more scrolling to start expansion faster
+              if (isDirectTransition) {
+                // Immediately scroll further to start expansion
+                window.scrollTo({
+                  top: 50,
+                  behavior: 'smooth'
+                });
+                
+                // After a slight delay, continue scrolling to fully expand
+                setTimeout(() => {
+                  window.scrollTo({
+                    top: window.innerHeight * 0.3,
+                    behavior: 'smooth'
+                  });
+                }, 300);
+              } else {
+                triggerInitialScroll();
+              }
               
               // Refresh ScrollTrigger
               ScrollTrigger.refresh();
-            }, 300);
+            }, setupDelay);
           }
         });
       } else {
@@ -236,6 +283,8 @@ function App() {
         setContentReady(true);
         setupInitialFrameState();
         setupFrameExpansion();
+        triggerInitialScroll();
+        document.body.style.overflow = '';
       }
     }
     
@@ -285,13 +334,6 @@ function App() {
           <div 
             ref={transitionOverlayRef} 
             className="fixed inset-0 bg-black z-50 pointer-events-none"
-          ></div>
-          
-          {/* Scroll proxy - invisible element to capture scroll */}
-          <div 
-            ref={scrollProxy}
-            className="fixed inset-0 z-30 pointer-events-none"
-            style={{ display: 'none', height: '200vh' }}
           ></div>
           
           {/* Expanding frame */}

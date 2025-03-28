@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import Spline from '@splinetool/react-spline';
 import { gsap } from 'gsap';
 import { Code2, MousePointer, ArrowUpRight } from 'lucide-react';
-import { setupScrollPrompt, handleScrollDismiss } from '../lib/animations';
+import { setupScrollPrompt } from '../lib/animations';
 
 interface LoadingScreenProps {
   onLoadingComplete: () => void;
@@ -17,23 +17,29 @@ const LoadingScreen = ({ onLoadingComplete }: LoadingScreenProps) => {
   const interactionHintRef = useRef<HTMLDivElement>(null);
   const scrollPromptRef = useRef<HTMLDivElement>(null);
 
-  // Function to handle dismissal of loading screen
+  // Function to handle dismissal of loading screen with immediate transition 
+  // to frame view and scrolling initiation
   const dismissLoadingScreen = () => {
     if (scrollPromptRef.current && overlayRef.current && loadingComplete) {
+      // Indicate that user clicked the scroll button directly
+      window.sessionStorage.setItem('directTransition', 'true');
+      
+      // Animate out the scroll prompt
       gsap.to(scrollPromptRef.current, {
         opacity: 0,
         y: -20,
-        duration: 0.5,
+        duration: 0.4,
         ease: "power2.inOut"
       });
       
       // Animate out the loading screen
       gsap.to(overlayRef.current, {
         opacity: 0,
-        duration: 0.8,
+        duration: 0.6,
         ease: "power2.inOut",
         onComplete: () => {
-          setTimeout(onLoadingComplete, 300);
+          // Complete the transition with a shorter delay
+          setTimeout(onLoadingComplete, 100);
         }
       });
     }
@@ -65,12 +71,14 @@ const LoadingScreen = ({ onLoadingComplete }: LoadingScreenProps) => {
         }
         
         // Animate progress bar out
-        gsap.to(contentRef.current, {
-          opacity: 0,
-          y: 20,
-          duration: 0.5,
-          ease: "power2.inOut"
-        });
+        if (contentRef.current) {
+          gsap.to(contentRef.current, {
+            opacity: 0,
+            y: 20,
+            duration: 0.5,
+            ease: "power2.inOut"
+          });
+        }
 
         // Auto-dismiss after 8 seconds if user doesn't interact
         setTimeout(() => {
@@ -113,19 +121,11 @@ const LoadingScreen = ({ onLoadingComplete }: LoadingScreenProps) => {
 
   useEffect(() => {
     if (loadingComplete) {
-      // Setup scroll to dismiss
-      const cleanup = handleScrollDismiss({
-        scrollPromptRef,
-        overlayRef,
-        onComplete: onLoadingComplete
-      });
-
       // Add keyboard event listener for pressing any key to dismiss
       const handleKeyDown = () => dismissLoadingScreen();
       window.addEventListener('keydown', handleKeyDown);
 
       return () => {
-        cleanup && cleanup();
         window.removeEventListener('keydown', handleKeyDown);
       };
     }
@@ -168,7 +168,7 @@ const LoadingScreen = ({ onLoadingComplete }: LoadingScreenProps) => {
             </div>
           </div>
           <span className="text-white text-sm font-light tracking-wider uppercase">
-            Click or Scroll Down
+            Click to Enter
           </span>
         </div>
 
